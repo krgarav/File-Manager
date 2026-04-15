@@ -9,8 +9,10 @@ import {
 
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const hostUrl = `${(import.meta.env.VITE_FILE_MANAGER_BASE_URL || apiBaseUrl).replace(/\/$/, "")}/`;
-const workspaceId = (import.meta.env.VITE_WORKSPACE_ID || "demo-workspace").trim();
+const workspaceFallback = (import.meta.env.VITE_WORKSPACE_ID || "workspace").trim();
 const integrationType = "GOOGLE_DRIVE";
+const tokenStorageKey = "cfm_auth_token";
+const userStorageKey = "cfm_auth_user";
 
 const appStats = [
   { label: "Active Team Members", value: "24", note: "+4 this month" },
@@ -24,7 +26,164 @@ const folders = [
   { name: "Operations", files: 96, updated: "Updated 2h ago" },
 ];
 
-function DashboardHome() {
+function buildFileManagerUrls(workspaceId) {
+  const base = `workspace=${encodeURIComponent(workspaceId)}`;
+
+  return {
+    url: `${hostUrl}api/FileManager/FileOperations?${base}`,
+    getImageUrl: `${hostUrl}api/FileManager/GetImage?${base}`,
+    uploadUrl: `${hostUrl}api/FileManager/Upload?${base}`,
+    downloadUrl: `${hostUrl}api/FileManager/Download?${base}`,
+  };
+}
+
+function AuthPage({ mode, setMode, onSubmit, loading, error, workspaceDefault }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [workspace, setWorkspace] = useState(workspaceDefault || "");
+
+  useEffect(() => {
+    if (workspaceDefault) {
+      setWorkspace(workspaceDefault);
+    }
+  }, [workspaceDefault]);
+
+  const isSignup = mode === "signup";
+
+  const submit = async (event) => {
+    event.preventDefault();
+
+    const payload = isSignup
+      ? { name, email, password, workspace }
+      : { email, password };
+
+    await onSubmit(mode, payload);
+  };
+
+  return (
+    <div className="auth-shell">
+      <section className="auth-card">
+        <p className="section-eyebrow">Cloud File Manager</p>
+        <h1>{isSignup ? "Create your account" : "Sign in"}</h1>
+        <p className="auth-subtitle">
+          Access integrations and file operations with JWT-secured APIs.
+        </p>
+
+        <div className="auth-switch">
+          <button
+            type="button"
+            className={mode === "signin" ? "plain-btn active" : "plain-btn"}
+            onClick={() => setMode("signin")}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            className={mode === "signup" ? "plain-btn active" : "plain-btn"}
+            onClick={() => setMode("signup")}
+          >
+            Sign up
+          </button>
+        </div>
+
+        <form className="auth-form" onSubmit={submit}>
+          {isSignup ? (
+            <label>
+              Full name
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                minLength={2}
+                maxLength={80}
+              />
+            </label>
+          ) : null}
+
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              maxLength={200}
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              minLength={8}
+              maxLength={128}
+            />
+          </label>
+
+          {isSignup ? (
+            <label>
+              Workspace
+              <input
+                value={workspace}
+                onChange={(event) => setWorkspace(event.target.value)}
+                required
+                maxLength={120}
+              />
+            </label>
+          ) : null}
+
+          {error ? <p className="integration-alert error">{error}</p> : null}
+
+          <button type="submit" className="connect-btn" disabled={loading}>
+            {loading ? "Processing..." : isSignup ? "Create account" : "Sign in"}
+          </button>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function DashboardHome({
+  activeIntegrationCount,
+  workspaceId,
+  authToken,
+}) {
+  const fileManagerUrls = useMemo(
+    () => buildFileManagerUrls(workspaceId),
+    [workspaceId],
+  );
+
+  const handleBeforeSend = useCallback(
+    (args) => {
+      if (!authToken) {
+        return;
+      }
+
+      const authHeader = `Bearer ${authToken}`;
+      const applyHeader = (eventArgs) => {
+        if (eventArgs?.httpRequest?.setRequestHeader) {
+          eventArgs.httpRequest.setRequestHeader("Authorization", authHeader);
+        }
+      };
+
+      if (args?.ajaxSettings) {
+        const existingBeforeSend = args.ajaxSettings.beforeSend;
+        args.ajaxSettings.beforeSend = (eventArgs) => {
+          if (typeof existingBeforeSend === "function") {
+            existingBeforeSend(eventArgs);
+          }
+          applyHeader(eventArgs);
+        };
+      }
+      applyHeader(args);
+    },
+    [authToken],
+  );
+
   return (
     <>
       <section className="hero-card">
@@ -40,6 +199,7 @@ function DashboardHome() {
           <span>TLS 1.2+</span>
           <span>Encrypted Storage</span>
           <span>Audit Ready</span>
+          <span>Active Drives: {activeIntegrationCount}</span>
         </div>
       </section>
 
@@ -93,25 +253,10 @@ function DashboardHome() {
 
         <div className="control-section">
           <FileManagerComponent
+            key={`workspace-${workspaceId}`}
             id="overview_file"
-            ajaxSettings={{
-              url:
-                hostUrl +
-                "api/FileManager/FileOperations?workspace=" +
-                encodeURIComponent(workspaceId),
-              getImageUrl:
-                hostUrl +
-                "api/FileManager/GetImage?workspace=" +
-                encodeURIComponent(workspaceId),
-              uploadUrl:
-                hostUrl +
-                "api/FileManager/Upload?workspace=" +
-                encodeURIComponent(workspaceId),
-              downloadUrl:
-                hostUrl +
-                "api/FileManager/Download?workspace=" +
-                encodeURIComponent(workspaceId),
-            }}
+            ajaxSettings={fileManagerUrls}
+            beforeSend={handleBeforeSend}
             toolbarSettings={{
               items: [
                 "NewFolder",
@@ -164,39 +309,49 @@ function DashboardHome() {
   );
 }
 
-function IntegrationsPage() {
-  const [driveStatus, setDriveStatus] = useState({ connected: false, connectedAt: null });
+function IntegrationsPage({
+  linkedIntegrations,
+  onToggleIntegrationStatus,
+  refreshIntegrations,
+  workspaceId,
+  user,
+  authToken,
+}) {
   const [statusLoading, setStatusLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const hasClientConfig = Boolean(workspaceId);
+  const hasClientConfig = Boolean(workspaceId && authToken && user?.userId);
 
-  const apiRequest = useCallback(async (path, init = {}, parseAsText = false) => {
-    const response = await fetch(`${apiBaseUrl}${path}`, {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...(init.headers || {}),
-      },
-    });
+  const apiRequest = useCallback(
+    async (path, init = {}, parseAsText = false) => {
+      const response = await fetch(`${apiBaseUrl}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(init.headers || {}),
+        },
+      });
 
-    if (parseAsText) {
-      const textResponse = await response.text();
-      if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
+      if (parseAsText) {
+        const textResponse = await response.text();
+        if (!response.ok) {
+          throw new Error(`Request failed (${response.status})`);
+        }
+        return textResponse;
       }
-      return textResponse;
-    }
 
-    const parsed = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(parsed?.message || `Request failed (${response.status})`);
-    }
+      const parsed = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(parsed?.message || `Request failed (${response.status})`);
+      }
 
-    return parsed;
-  }, []);
+      return parsed;
+    },
+    [authToken],
+  );
 
   const loadStatus = useCallback(async () => {
     if (!hasClientConfig) {
@@ -207,29 +362,13 @@ function IntegrationsPage() {
     setErrorMessage("");
 
     try {
-      const data = await apiRequest(
-        `/v1/connected?workspace=${encodeURIComponent(workspaceId)}`,
-        { method: "GET" },
-      );
-
-      const connected = Array.isArray(data?.data)
-        ? data.data.some((item) => item?.type === integrationType && item?.isActive)
-        : false;
-
-      const matched = Array.isArray(data?.data)
-        ? data.data.find((item) => item?.type === integrationType)
-        : null;
-
-      setDriveStatus({
-        connected,
-        connectedAt: matched?.updatedAt || null,
-      });
+      await refreshIntegrations();
     } catch (error) {
       setErrorMessage(error.message || "Unable to get Google Drive status.");
     } finally {
       setStatusLoading(false);
     }
-  }, [apiRequest, hasClientConfig]);
+  }, [hasClientConfig, refreshIntegrations]);
 
   const connectDrive = async () => {
     if (!hasClientConfig || actionLoading) {
@@ -270,20 +409,20 @@ function IntegrationsPage() {
       try {
         await apiRequest(
           `/v1/integrations/get-code?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
-          { method: "GET" },
+          { method: "GET", headers: {} },
           true,
         );
 
         setSuccessMessage("Google Drive connected successfully.");
         window.history.replaceState({}, document.title, window.location.pathname);
-        await loadStatus();
+        await refreshIntegrations();
       } catch (error) {
         setErrorMessage(error.message || "Unable to complete Google Drive authorization.");
       } finally {
         setActionLoading(false);
       }
     },
-    [apiRequest, loadStatus],
+    [apiRequest, refreshIntegrations],
   );
 
   useEffect(() => {
@@ -300,7 +439,8 @@ function IntegrationsPage() {
     }
   }, [handleOAuthCallback, hasClientConfig]);
 
-  const driveStatusLabel = driveStatus.connected ? "Connected" : "Not connected";
+  const activeIntegrations = linkedIntegrations.filter((item) => item.isActive);
+  const driveStatusLabel = activeIntegrations.length ? "Connected" : "Not connected";
 
   return (
     <>
@@ -332,19 +472,44 @@ function IntegrationsPage() {
               Status: <strong>{statusLoading ? "Checking..." : driveStatusLabel}</strong>
             </p>
             <p>
-              Last event: <strong>{driveStatus.connectedAt || "-"}</strong>
+              Linked accounts: <strong>{linkedIntegrations.length}</strong>
             </p>
             <p>
-              Workspace: <strong>{workspaceId || "-"}</strong>
+              Active accounts: <strong>{activeIntegrations.length}</strong>
+            </p>
+            <p>
+              Workspace/User: <strong>{workspaceId} / {user?.email || "-"}</strong>
             </p>
           </div>
+
+          {linkedIntegrations.length ? (
+            <div className="linked-list">
+              {linkedIntegrations.map((item) => (
+                <div key={item.id} className="linked-item">
+                  <div>
+                    <p className="linked-email">{item.info || "Unknown email"}</p>
+                    <p className="linked-meta">
+                      Linked: {item.updatedAt || "-"} | Status: {item.isActive ? "Active" : "Disabled"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={item.isActive ? "plain-btn active" : "plain-btn"}
+                    onClick={() => onToggleIntegrationStatus(item.id, !item.isActive)}
+                  >
+                    {item.isActive ? "Disable" : "Activate"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
 
           {errorMessage ? <p className="integration-alert error">{errorMessage}</p> : null}
           {successMessage ? <p className="integration-alert success">{successMessage}</p> : null}
 
           {!hasClientConfig ? (
             <p className="integration-alert warn">
-              Missing `VITE_WORKSPACE_ID` in client environment.
+              Missing workspace or valid auth token.
             </p>
           ) : null}
 
@@ -356,7 +521,7 @@ function IntegrationsPage() {
               disabled={!hasClientConfig || actionLoading}
               aria-label="Connect Google Drive integration"
             >
-              {actionLoading ? "Processing..." : "Connect Google Drive"}
+              {actionLoading ? "Processing..." : "Link Another Google Account"}
             </button>
 
             <button
@@ -386,6 +551,145 @@ function IntegrationsPage() {
 
 export default function CloudFileManagerApp() {
   const [activePage, setActivePage] = useState("home");
+  const [linkedIntegrations, setLinkedIntegrations] = useState([]);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem(tokenStorageKey) || "");
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem(userStorageKey);
+    if (!saved) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return null;
+    }
+  });
+  const [authMode, setAuthMode] = useState("signin");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+
+  const workspaceId = (user?.workspace || workspaceFallback).trim();
+
+  const apiRequest = useCallback(
+    async (path, init = {}) => {
+      const response = await fetch(`${apiBaseUrl}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(init.headers || {}),
+        },
+      });
+
+      const parsed = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(parsed?.message || `Request failed (${response.status})`);
+      }
+
+      return parsed;
+    },
+    [authToken],
+  );
+
+  const refreshIntegrations = useCallback(
+    async () => {
+      if (!authToken || !workspaceId) {
+        setLinkedIntegrations([]);
+        return;
+      }
+
+      const parsed = await apiRequest(
+        `/v1/integrations?workspace=${encodeURIComponent(workspaceId)}`,
+      );
+
+      const list = Array.isArray(parsed?.data) ? parsed.data : [];
+      setLinkedIntegrations(list);
+    },
+    [apiRequest, authToken, workspaceId],
+  );
+
+  const toggleIntegrationStatus = useCallback(
+    async (integrationId, isActive) => {
+      await apiRequest(
+        `/v1/integrations/${encodeURIComponent(integrationId)}/status?workspace=${encodeURIComponent(workspaceId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ isActive }),
+        },
+      );
+      await refreshIntegrations();
+    },
+    [apiRequest, refreshIntegrations, workspaceId],
+  );
+
+  const handleAuthSubmit = useCallback(async (mode, payload) => {
+    setAuthLoading(true);
+    setAuthError("");
+
+    try {
+      const endpoint = mode === "signup" ? "/v1/auth/signup" : "/v1/auth/signin";
+      const result = await fetch(`${apiBaseUrl}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const parsed = await result.json().catch(() => null);
+      if (!result.ok) {
+        throw new Error(parsed?.message || `Request failed (${result.status})`);
+      }
+
+      const token = parsed?.data?.token || "";
+      const nextUser = parsed?.data?.user || null;
+      if (!token || !nextUser) {
+        throw new Error("Invalid auth response");
+      }
+
+      setAuthToken(token);
+      setUser(nextUser);
+      localStorage.setItem(tokenStorageKey, token);
+      localStorage.setItem(userStorageKey, JSON.stringify(nextUser));
+      setAuthMode("signin");
+      setActivePage("home");
+    } catch (error) {
+      setAuthError(error.message || "Authentication failed.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }, []);
+
+  const signOut = useCallback(() => {
+    setAuthToken("");
+    setUser(null);
+    setLinkedIntegrations([]);
+    localStorage.removeItem(tokenStorageKey);
+    localStorage.removeItem(userStorageKey);
+  }, []);
+
+  useEffect(() => {
+    if (!authToken) {
+      return;
+    }
+
+    apiRequest("/v1/auth/me")
+      .then((response) => {
+        const profile = response?.data;
+        if (!profile?.userId) {
+          throw new Error("Invalid session");
+        }
+
+        setUser(profile);
+        localStorage.setItem(userStorageKey, JSON.stringify(profile));
+      })
+      .catch(() => {
+        signOut();
+      });
+  }, [apiRequest, authToken, signOut]);
+
+  useEffect(() => {
+    refreshIntegrations().catch(() => undefined);
+  }, [refreshIntegrations]);
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -394,12 +698,27 @@ export default function CloudFileManagerApp() {
     }
   }, []);
 
+  const activeIntegrationCount = linkedIntegrations.filter((item) => item.isActive).length;
+
   const pageTitle = useMemo(() => {
     if (activePage === "integrations") {
       return "Integrations";
     }
     return "Home";
   }, [activePage]);
+
+  if (!authToken || !user) {
+    return (
+      <AuthPage
+        mode={authMode}
+        setMode={setAuthMode}
+        onSubmit={handleAuthSubmit}
+        loading={authLoading}
+        error={authError}
+        workspaceDefault={workspaceFallback}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -435,10 +754,32 @@ export default function CloudFileManagerApp() {
       <main className="main-content">
         <header className="topbar">
           <h1>{pageTitle}</h1>
-          <span className="status-pill">Workspace: Production</span>
+          <div className="topbar-actions">
+            <span className="status-pill">
+              Active Drives: {activeIntegrationCount} | Workspace: {workspaceId}
+            </span>
+            <button type="button" className="plain-btn" onClick={signOut}>
+              Sign out
+            </button>
+          </div>
         </header>
 
-        {activePage === "home" ? <DashboardHome /> : <IntegrationsPage />}
+        {activePage === "home" ? (
+          <DashboardHome
+            activeIntegrationCount={activeIntegrationCount}
+            workspaceId={workspaceId}
+            authToken={authToken}
+          />
+        ) : (
+          <IntegrationsPage
+            linkedIntegrations={linkedIntegrations}
+            onToggleIntegrationStatus={toggleIntegrationStatus}
+            refreshIntegrations={refreshIntegrations}
+            workspaceId={workspaceId}
+            user={user}
+            authToken={authToken}
+          />
+        )}
       </main>
     </div>
   );
