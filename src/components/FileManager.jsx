@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileManagerComponent,
   Inject,
-  NavigationPane,
   DetailsView,
   Toolbar,
 } from "@syncfusion/ej2-react-filemanager";
@@ -257,6 +256,7 @@ function DashboardHome({
             id="overview_file"
             ajaxSettings={fileManagerUrls}
             beforeSend={handleBeforeSend}
+            navigationPaneSettings={{ visible: false }}
             toolbarSettings={{
               items: [
                 "NewFolder",
@@ -301,7 +301,7 @@ function DashboardHome({
             }}
             view="Details"
           >
-            <Inject services={[NavigationPane, DetailsView, Toolbar]} />
+            <Inject services={[DetailsView, Toolbar]} />
           </FileManagerComponent>
         </div>
       </section>
