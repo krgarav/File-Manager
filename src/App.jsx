@@ -1,9 +1,9 @@
 import "./App.css";
-import Overview from "./components/FileManager.jsx";
+import CloudFileManagerApp from "./components/FileManager.jsx";
 import "@syncfusion/ej2-filemanager/styles/material.css";
 
 function App() {
-  return <Overview />;
+  return <CloudFileManagerApp />;
 }
 
 export default App;
