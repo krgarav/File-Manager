@@ -7,8 +7,8 @@ import {
   Toolbar,
 } from "@syncfusion/ej2-react-filemanager";
 
-const hostUrl = "https://ej2-aspcore-service.azurewebsites.net/";
 const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+const hostUrl = `${(import.meta.env.VITE_FILE_MANAGER_BASE_URL || apiBaseUrl).replace(/\/$/, "")}/`;
 const workspaceId = (import.meta.env.VITE_WORKSPACE_ID || "demo-workspace").trim();
 const integrationType = "GOOGLE_DRIVE";
 
@@ -95,10 +95,22 @@ function DashboardHome() {
           <FileManagerComponent
             id="overview_file"
             ajaxSettings={{
-              url: hostUrl + "api/FileManager/FileOperations",
-              getImageUrl: hostUrl + "api/FileManager/GetImage",
-              uploadUrl: hostUrl + "api/FileManager/Upload",
-              downloadUrl: hostUrl + "api/FileManager/Download",
+              url:
+                hostUrl +
+                "api/FileManager/FileOperations?workspace=" +
+                encodeURIComponent(workspaceId),
+              getImageUrl:
+                hostUrl +
+                "api/FileManager/GetImage?workspace=" +
+                encodeURIComponent(workspaceId),
+              uploadUrl:
+                hostUrl +
+                "api/FileManager/Upload?workspace=" +
+                encodeURIComponent(workspaceId),
+              downloadUrl:
+                hostUrl +
+                "api/FileManager/Download?workspace=" +
+                encodeURIComponent(workspaceId),
             }}
             toolbarSettings={{
               items: [
